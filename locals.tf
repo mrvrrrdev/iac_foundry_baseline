@@ -20,6 +20,7 @@ locals {
 
     log_analytics_workspace_name = "${local.name_prefix}-log-foundry-${local.seq}"
     monitor_workspace_name       = "${local.name_prefix}-amw-foundry-${local.seq}"
+    application_insights_name    = "${local.name_prefix}-appi-foundry-${local.seq}"
 
     # Storage account: 3-24 chars, lowercase alphanumeric only, globally unique.
     storage_account_name = "${local.name_compact}stfnd${local.seq}"
@@ -29,6 +30,9 @@ locals {
 
     # Cosmos DB: 3-44 chars, lowercase letters, digits and hyphens.
     cosmosdb_name = "${local.name_prefix}-cosmos-${local.seq}"
+
+    # Container Registry: 5-50 chars, alphanumeric only, globally unique.
+    container_registry_name = "${local.name_compact}acrfnd${local.seq}"
   }
 
   #------------------------------------------------------
@@ -46,16 +50,7 @@ locals {
   # private endpoint is still created but its DNS records are managed out-of-band
   # (e.g. by an Azure Policy in a central connectivity subscription).
   #------------------------------------------------------
-  private_dns_zones = {
-    cognitiveservices = var.private_dns_zone_resource_ids.cognitiveservices
-    openai            = var.private_dns_zone_resource_ids.openai
-    ai                = var.private_dns_zone_resource_ids.ai
-    blob              = var.private_dns_zone_resource_ids.blob
-    file              = var.private_dns_zone_resource_ids.file
-    vault             = var.private_dns_zone_resource_ids.vault
-    search            = var.private_dns_zone_resource_ids.search
-    cosmos_sql        = var.private_dns_zone_resource_ids.cosmos_sql
-  }
+  private_dns_zones = var.private_dns_zone_resource_ids
 
   # Private DNS zone configs for the AI Foundry account private endpoint, limited
   # to the zones whose resource IDs were supplied. Empty => the self-managed zone

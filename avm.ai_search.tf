@@ -37,10 +37,12 @@ module "ai_search" {
     admin_group_search_service_contributor = {
       role_definition_id_or_name = "Search Service Contributor"
       principal_id               = var.admin_group_id
+      principal_type             = "Group"
     }
     admin_group_search_index_data_contributor = {
       role_definition_id_or_name = "Search Index Data Contributor"
       principal_id               = var.admin_group_id
+      principal_type             = "Group"
     }
     #------------------------------------------------------
     # AI Foundry managed identity - Agent Service vector store
@@ -48,10 +50,12 @@ module "ai_search" {
     foundry_mi_search_service_contributor = {
       role_definition_id_or_name = "Search Service Contributor"
       principal_id               = module.foundry_managed_identity.principal_id
+      principal_type             = "ServicePrincipal"
     }
     foundry_mi_search_index_data_contributor = {
       role_definition_id_or_name = "Search Index Data Contributor"
       principal_id               = module.foundry_managed_identity.principal_id
+      principal_type             = "ServicePrincipal"
     }
   }
 

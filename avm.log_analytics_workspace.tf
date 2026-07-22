@@ -16,6 +16,7 @@ module "log_analytics_workspace" {
     admin_group_log_analytics_contributor = {
       role_definition_id_or_name = "Log Analytics Contributor"
       principal_id               = var.admin_group_id
+      principal_type             = "Group"
     }
   }
 }

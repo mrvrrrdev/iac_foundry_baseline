@@ -131,14 +131,15 @@ variable "agent_subnet_resource_id" {
 #------------------------------------------------------
 variable "private_dns_zone_resource_ids" {
   type = object({
-    cognitiveservices = optional(string)
-    openai            = optional(string)
-    ai                = optional(string)
-    blob              = optional(string)
-    file              = optional(string)
-    vault             = optional(string)
-    search            = optional(string)
-    cosmos_sql        = optional(string)
+    cognitiveservices  = optional(string)
+    openai             = optional(string)
+    ai                 = optional(string)
+    blob               = optional(string)
+    file               = optional(string)
+    vault              = optional(string)
+    search             = optional(string)
+    cosmos_sql         = optional(string)
+    container_registry = optional(string)
   })
   default     = {}
   description = <<-EOT
@@ -150,7 +151,9 @@ variable "private_dns_zone_resource_ids" {
     Policy 'deployIfNotExists' in a central connectivity subscription.
 
     Keys: cognitiveservices, openai, ai (AI Foundry account); blob, file
-    (storage); vault (key vault); search (AI Search); cosmos_sql (Cosmos DB).
+    (storage); vault (key vault); search (AI Search); cosmos_sql (Cosmos DB);
+    container_registry (ACR privatelink.azurecr.io - only used when the Agent
+    Service is enabled, which auto-provisions a Premium ACR for hosted agents).
   EOT
 }
 

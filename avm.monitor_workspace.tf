@@ -20,4 +20,5 @@ resource "azurerm_role_assignment" "admin_group_monitor_data_reader" {
   scope                = azurerm_monitor_workspace.monitor_workspace.id
   role_definition_name = "Monitoring Data Reader"
   principal_id         = var.admin_group_id
+  principal_type       = "Group"
 }

@@ -1,4 +1,4 @@
-# 04.AIFoundry — Enterprise Azure AI Foundry (Terraform)
+# AIFoundry — Enterprise Azure AI Foundry (Terraform)
 
 Reusable, landing-zone-agnostic Terraform that provisions an **enterprise-ready,
 private, Entra-only Azure AI Foundry** account (Cognitive Services
@@ -26,8 +26,8 @@ environments. See [Section 4 — Landing zone expectations](#4-landing-zone-expe
 | Auth | Entra ID only (`local_auth_enabled = false`) |
 | Network | Private endpoints only (`public_network_access_enabled = false`) |
 | Identity | User-assigned managed identity (Entra ID / RBAC to dependencies) |
-| Always deployed | Foundry account + project + models, Key Vault, Storage, Log Analytics, Monitor workspace |
-| Optional | AI Search, Cosmos DB, Agent Service (network-injected) |
+| Always deployed | Foundry account + project + models, Key Vault, Storage, Log Analytics, Monitor workspace, **Application Insights** |
+| Optional | AI Search, Cosmos DB, Agent Service (network-injected), **Container Registry** (auto-on with Agent Service) |
 | Network ownership | **Not** created here — supplied by the landing zone via variables |
 
 ---
@@ -52,23 +52,29 @@ flowchart TB
   stg["Storage"]
   law["Log Analytics"]
   amw["Monitor workspace"]
+  appi["Application Insights"]
   srch["AI Search (optional)"]
   cosmos["Cosmos DB (optional)"]
+  acr["Container Registry (with Agent Service)"]
 
   acct --- proj
   acct -. uses .- mi
   proj -->|threads| cosmos
   proj -->|vectors| srch
   proj -->|files| stg
+  proj -->|telemetry| appi
   acct --> kv
   acct -->|diagnostics| law
   acct -->|metrics| amw
+  appi -->|workspace| law
   acct -. private endpoint .- pe
   stg -. private endpoint .- pe
   kv -. private endpoint .- pe
   srch -. private endpoint .- pe
   cosmos -. private endpoint .- pe
+  acr -. private endpoint .- pe
   proj -. network injection .- aca
+  aca -. pulls images .- acr
 ```
 
 The module creates the Foundry account, project, model deployments, managed
@@ -173,7 +179,7 @@ backs Agent Service network injection. Its constraints come from that platform:
 
 The Foundry account always needs:
 
-```
+```raw
 privatelink.cognitiveservices.azure.com
 privatelink.openai.azure.com
 privatelink.services.ai.azure.com
@@ -184,10 +190,11 @@ privatelink.file.core.windows.net
 
 Optional (only when the matching service is enabled):
 
-```
+```raw
 privatelink.search.windows.net        # AI Search
 privatelink.documents.azure.com       # Cosmos DB (NoSQL)
 privatelink.dfs.core.windows.net      # Storage Data Lake (if used)
+privatelink.azurecr.io                # Container Registry (with Agent Service)
 ```
 
 DNS integration is controlled by `private_dns_zone_resource_ids`:
@@ -234,7 +241,7 @@ rule {
 
 Baseline HTTPS (443) FQDN allowlist:
 
-```
+```raw
 *.cognitiveservices.azure.com
 *.openai.azure.com
 *.services.ai.azure.com
@@ -248,12 +255,22 @@ ai.azure.com
 *.monitor.azure.com
 *.ods.opinsights.azure.com
 *.oms.opinsights.azure.com
+*.applicationinsights.azure.com
+*.in.applicationinsights.azure.com
 login.microsoftonline.com
+*.login.microsoftonline.com
+login.microsoft.com
+*.login.microsoft.com
+*.identity.azure.net
 management.azure.com
 mcr.microsoft.com
 *.data.mcr.microsoft.com
 *.azurecr.io
 packages.microsoft.com
+# --- Agent Service (ACA managed environment is AKS-backed) ---
+# No service-tag equivalent; must be application rules.
+packages.aks.azure.com
+acs-mirror.azureedge.net
 ```
 
 > Do **not** enable TLS inspection for this traffic — a self-signed intercept
@@ -279,6 +296,11 @@ enabled **implicitly** when an agent subnet is supplied
 > The **bring-your-own (standard)** Agent Service requires **all three**: agent subnet
 > **and** Cosmos DB **and** AI Search. Supplying only one of the two adjacent stores
 > yields a **basic** capability host.
+
+> Whenever `agent_subnet_resource_id` is supplied, a **Premium, zone-redundant Azure
+> Container Registry** is provisioned automatically with a private endpoint. It hosts
+> the images the ACA managed environment pulls; if you omit the agent subnet, no ACR
+> is created.
 
 ---
 
@@ -313,7 +335,7 @@ These variables are the entire contract between your landing zone and the module
 |----------|------|---------|-------------|
 | `private_endpoints_subnet_resource_id` | string | — | **Required.** Full subnet ID for private endpoints. |
 | `agent_subnet_resource_id` | string | `null` | Delegated agent subnet ID. Set -> enables Agent Service. `/27` min, `/24` recommended. |
-| `private_dns_zone_resource_ids` | object | `{}` | Per-zone DNS zone IDs (`cognitiveservices`, `openai`, `ai`, `blob`, `file`, `vault`, `search`, `cosmos_sql`). Omit a key to manage DNS out-of-band. |
+| `private_dns_zone_resource_ids` | object | `{}` | Per-zone DNS zone IDs (`cognitiveservices`, `openai`, `ai`, `blob`, `file`, `vault`, `search`, `cosmos_sql`, `container_registry`). Omit a key to manage DNS out-of-band. |
 
 ### Project and models
 
@@ -429,8 +451,12 @@ terraform apply tfplan
 | `storage_account_id` | Adjacent Storage account ID. |
 | `log_analytics_workspace_id` | Log Analytics workspace ID. |
 | `monitor_workspace_id` | Azure Monitor workspace ID. |
+| `application_insights_id` | Application Insights resource ID. |
+| `application_insights_connection_string` | App Insights connection string (**sensitive**). |
 | `ai_search_id` | AI Search ID (null when disabled). |
 | `cosmosdb_id` | Cosmos DB ID (null when disabled). |
+| `container_registry_id` | Container Registry ID (null when Agent Service disabled). |
+| `container_registry_login_server` | ACR login server FQDN (null when Agent Service disabled). |
 
 ---
 
@@ -472,6 +498,11 @@ re-apply.
 
 ### 11.3 Agent Service / capability host stuck in "Creating"
 
+- **#1 cause when the agent subnet is force-tunneled: missing AKS/CNI FQDNs on the
+  firewall.** The ACA managed environment is AKS-backed and pulls Kubernetes/CNI
+  binaries from `packages.aks.azure.com` and `acs-mirror.azureedge.net`. There is no
+  service-tag equivalent — they must be application rules. Without them the nodes
+  never bootstrap and the account hangs the full timeout.
 - Confirm the agent subnet is **delegated to `Microsoft.App/environments`** and is at
   least a `/27` (`/24` recommended) in an **RFC1918** range valid for the region
   (Class A `10.x` only in supported regions; otherwise use `172.16–31.x` / `192.168.x`).

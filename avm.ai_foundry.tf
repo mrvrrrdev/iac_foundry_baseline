@@ -82,6 +82,16 @@ module "ai_foundry" {
       principal_id               = var.admin_group_id
       principal_type             = "Group"
     }
+    # Portal write-back on account-scope settings the Foundry UI touches
+    # (model deployments, RAI policies, connections, capability host state).
+    # Without this the portal returns AuthorizationFailed on edits even though
+    # the group can read/build agents. Least-privilege control-plane role for
+    # Foundry admins.
+    admin_group_cognitive_contributor = {
+      role_definition_id_or_name = "Cognitive Services Contributor"
+      principal_id               = var.admin_group_id
+      principal_type             = "Group"
+    }
   }
 
   diagnostic_settings = local.diagnostic_settings

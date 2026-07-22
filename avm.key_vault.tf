@@ -32,6 +32,7 @@ module "key_vault" {
     admin_group_key_vault_administrator = {
       role_definition_id_or_name = "Key Vault Administrator"
       principal_id               = var.admin_group_id
+      principal_type             = "Group"
     }
     #------------------------------------------------------
     # AI Foundry managed identity - read secrets for BYO connections
@@ -39,6 +40,7 @@ module "key_vault" {
     foundry_mi_key_vault_secrets_user = {
       role_definition_id_or_name = "Key Vault Secrets User"
       principal_id               = module.foundry_managed_identity.principal_id
+      principal_type             = "ServicePrincipal"
     }
   }
 

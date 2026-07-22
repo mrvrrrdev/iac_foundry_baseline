@@ -77,6 +77,7 @@ resource "azurerm_role_assignment" "foundry_mi_openai_user" {
   scope                = module.ai_foundry.resource_id
   role_definition_name = "Cognitive Services OpenAI User"
   principal_id         = module.foundry_managed_identity.principal_id
+  principal_type       = "ServicePrincipal"
 }
 
 #------------------------------------------------------
@@ -93,6 +94,21 @@ resource "azurerm_cosmosdb_sql_role_assignment" "foundry_mi_cosmos_data_contribu
   role_definition_id  = "${module.cosmosdb[0].resource_id}/sqlRoleDefinitions/00000000-0000-0000-0000-000000000002"
   principal_id        = module.foundry_managed_identity.principal_id
   scope               = module.cosmosdb[0].resource_id
+}
+
+#------------------------------------------------------
+# Admin group - Reader on the resource group.
+#
+# Portal navigation across the Foundry blade and every adjacent resource
+# requires read on the containing RG. Without this the Foundry portal shows
+# empty side-nav sections for group members who otherwise have all the
+# resource-scope roles above.
+#------------------------------------------------------
+resource "azurerm_role_assignment" "admin_group_rg_reader" {
+  scope                = azurerm_resource_group.foundry.id
+  role_definition_name = "Reader"
+  principal_id         = var.admin_group_id
+  principal_type       = "Group"
 }
 
 #------------------------------------------------------

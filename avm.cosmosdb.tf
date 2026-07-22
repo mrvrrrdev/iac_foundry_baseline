@@ -43,6 +43,16 @@ module "cosmosdb" {
     admin_group_documentdb_contributor = {
       role_definition_id_or_name = "DocumentDB Account Contributor"
       principal_id               = var.admin_group_id
+      principal_type             = "Group"
+    }
+    # Symmetric with the MI grant in rbac.tf - admins can create/repair the
+    # `enterprise_memory` database and containers that the Foundry capability
+    # host provisions. Documented in the Foundry Standard Agent Setup role
+    # matrix as the admin-side counterpart to the project MI's Cosmos Operator.
+    admin_group_cosmos_operator = {
+      role_definition_id_or_name = "Cosmos DB Operator"
+      principal_id               = var.admin_group_id
+      principal_type             = "Group"
     }
   }
 

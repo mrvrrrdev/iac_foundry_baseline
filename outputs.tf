@@ -67,3 +67,24 @@ output "cosmosdb_id" {
   description = "Resource ID of the adjacent Azure Cosmos DB account (null when disabled)."
   value       = var.enable_cosmosdb ? module.cosmosdb[0].resource_id : null
 }
+
+output "application_insights_id" {
+  description = "Resource ID of the Application Insights component."
+  value       = module.application_insights.resource_id
+}
+
+output "application_insights_connection_string" {
+  description = "Connection string of the Application Insights component. Foundry SDKs and hosted agents use this to emit traces to the Foundry portal."
+  value       = module.application_insights.connection_string
+  sensitive   = true
+}
+
+output "container_registry_id" {
+  description = "Resource ID of the Premium Container Registry (null when the Agent Service is disabled)."
+  value       = local.enable_agent_service ? module.container_registry[0].resource_id : null
+}
+
+output "container_registry_login_server" {
+  description = "Login server (FQDN) of the Premium Container Registry (null when the Agent Service is disabled)."
+  value       = local.enable_agent_service ? module.container_registry[0].resource.login_server : null
+}

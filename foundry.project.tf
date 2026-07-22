@@ -107,6 +107,38 @@ resource "azapi_resource" "conn_search" {
 }
 
 #------------------------------------------------------
+# Application Insights project connection.
+#
+# Always created (App Insights is unconditional in this module). Wires the
+# Foundry portal Tracing / Evaluations panels to the workspace-backed App
+# Insights component so agent traces surface automatically. Uses the connection
+# string (documented category = "AppInsights", authType = "ApiKey" for the
+# instrumentation-key/connection-string style connection).
+#------------------------------------------------------
+resource "azapi_resource" "conn_appinsights" {
+  type      = "Microsoft.CognitiveServices/accounts/projects/connections@2025-04-01-preview"
+  name      = "appinsightsconn"
+  parent_id = azapi_resource.project.id
+
+  body = {
+    properties = {
+      category      = "AppInsights"
+      target        = module.application_insights.resource_id
+      authType      = "ApiKey"
+      isSharedToAll = true
+      credentials = {
+        key = module.application_insights.connection_string
+      }
+      metadata = {
+        ApiType    = "Azure"
+        ResourceId = module.application_insights.resource_id
+        location   = var.location
+      }
+    }
+  }
+}
+
+#------------------------------------------------------
 # Agent Service capability host.
 #
 # For network-injected Foundry accounts (network_injections scenario =
