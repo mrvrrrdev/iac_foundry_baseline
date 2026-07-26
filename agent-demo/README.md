@@ -28,8 +28,12 @@ as a **capability demo** (here is how a hosted agent talks to each service).
     * `demo-kb` AI Search vector index seeded with the markdown docs under
       `src/seed/kb_docs/`.
 
-Seeding runs **inside the container** on first boot (see `src/bootstrap.py`),
-so no out-of-VNet data-plane calls are required from your workstation.
+Initial seeding runs **inside the container** (see `src/bootstrap.py`), so no
+out-of-VNet data-plane calls are required from your workstation. When
+`AGENT_SEED_ON_STARTUP=true`, `bootstrap.ensure_seeded()` runs synchronously
+before the Responses server starts; `/readiness` is unavailable until its
+marker check and any required seeding finish. After the initial seed succeeds,
+disable startup seeding and redeploy to reduce hosted-session cold-start risk.
 
 ---
 
@@ -54,7 +58,7 @@ Extra toggles:
 | Variable                    | Effect                                                                          |
 |-----------------------------|---------------------------------------------------------------------------------|
 | `AGENT_FEATURE_TRACING`     | Emit OpenTelemetry traces to Application Insights via `azure-monitor-opentelemetry`. |
-| `AGENT_SEED_ON_STARTUP`     | Run `bootstrap.ensure_seeded()` on the container's first boot (idempotent).     |
+| `AGENT_SEED_ON_STARTUP`     | Run synchronous, idempotent seeding before the Responses server starts. Keep enabled for the initial seed, then disable. |
 
 ---
 
@@ -168,10 +172,12 @@ Under the hood:
    managed identity and grants it `Monitoring Metrics Publisher` on Application
    Insights. When tracing is enabled, a missing identity or unverified role
    assignment fails postdeploy instead of leaving the agent with broken tracing.
-5. The container starts, `main.py`'s startup event runs
-   `bootstrap.ensure_seeded()`, which creates the AI Search index and
-   uploads the seed KB docs / blob / file. A marker blob makes repeat boots
-   a no-op.
+5. Before starting the Responses server, `main.py` synchronously runs
+   `bootstrap.ensure_seeded()` when `AGENT_SEED_ON_STARTUP=true`. It creates
+   the AI Search index and uploads the seed KB docs / blob / file. A marker
+   blob makes repeat runs idempotent, but `/readiness` cannot return HTTP 200
+   until the marker lookup and any required seeding finish. After the initial
+   seed succeeds, disable startup seeding and deploy a new agent version.
 
 
 ### 7. Smoke test
@@ -198,11 +204,33 @@ The container will re-register with only the enabled tools; the agent's
 system prompt tells the model to report the disabled capability instead of
 attempting to use it.
 
-Disable seeding entirely (e.g. for reproducibility during CI):
+After the first successful seed, disable synchronous startup seeding to keep
+`/readiness` off the Blob, Search, embedding, and File data-plane paths:
 
 ```powershell
 azd env set AGENT_SEED_ON_STARTUP false
+$acr = azd env get-value AZURE_CONTAINER_REGISTRY_NAME
+try {
+    az acr update -n $acr --public-network-enabled true  --default-action Allow | Out-Null
+    azd up
+}
+finally {
+    az acr update -n $acr --public-network-enabled false --default-action Deny  | Out-Null
+}
+./scripts/Invoke-Smoke.ps1 -VerboseLatency
 ```
+
+Do not disable seeding on a new environment before its initial successful run.
+Confirm the smoke test passes and, if necessary, confirm `.seeded` exists in
+the `demo-data` container. Otherwise the `demo-kb` index and documents,
+`welcome.txt`, or `hello.txt` may not exist.
+
+> **Observed mitigation (Sweden Central):** agent version 1 intermittently
+> returned HTTP 424 `session_not_ready` with startup seeding enabled. After
+> the data had been seeded, version 2 was deployed with startup seeding
+> disabled and passed all seven dependency checks plus all six capability
+> checks. The redeploy also refreshed hosted compute, so this is evidence of
+> a successful mitigation, not proof that seeding was the sole cause.
 
 ---
 
@@ -271,6 +299,7 @@ finally {
 | `preprovision` fails: cannot reach `<account>.cognitiveservices…:443`   | Corporate VPN / ExpressRoute is not up, or DNS is not resolving the private endpoint. Try `Resolve-DnsName <fqdn>` — it should return a 10.x/172.x address. |
 | `azd deploy` fails during ACR remote build with 403                     | Your Entra principal needs `AcrPush` on the registry. The landing zone grants `AcrPull` to the Foundry MI; humans running `azd deploy` need `AcrPush` separately. |
 | Agent version stuck in `Creating` / fails with `ProvisioningError`, `container_protocol_versions: []` | Container is not answering the platform probes. Inspect the version via data plane: `GET {AZURE_AI_PROJECT_ENDPOINT}/agents/{name}/versions/{n}?api-version=2025-05-15-preview` (Bearer token, audience `https://ai.azure.com`) and look at `error.code` + `container_protocol_versions`. Container-side traces: `az monitor app-insights query --app <appId> --analytics-query "traces \| order by timestamp desc \| take 50"`. Common causes: wrong port (must be 8088), wrong probe path (`GET /readiness`), image not `linux/amd64`, or ACR pull RBAC missing. If all customer-side checks are green, capture the request-id and open an Azure support ticket — hosted-agent provisioning has had platform-side incidents (e.g. Sweden Central, 2025-11). |
+| Invocation fails with HTTP 424 `session_not_ready` | The fresh session did not become ready before Foundry's timeout, so the request may not have reached the agent handler. After confirming initial seeding completed, set `AGENT_SEED_ON_STARTUP=false`, redeploy with the ACR wrapper from the configuration section, and rerun the smoke test. If it persists, inspect Application Insights for container startup traces and `/readiness` requests. No telemetry for a failed session suggests a Foundry scheduler or regional issue; retain the request ID for Azure Support. |
 | Exporter or QuickPulse logs `Unauthorized` and `The Agent/SDK does not have permissions to send telemetry to this resource.` | The current version's instance identity lacks `Monitoring Metrics Publisher` on Application Insights. From `agent-demo`, select the deployment's azd environment and run `pwsh ./hooks/postdeploy-demo-agent.ps1`. The hook retries identity propagation, creates the assignment idempotently, verifies it directly, and exits nonzero if tracing is still unauthorized. Do not enable local authentication as a workaround. |
 | Container starts, `healthcheck` reports Cosmos FAIL with 401            | The Foundry MI Cosmos data-plane role assignment (`00000000-…-002`) has not propagated yet. Wait a minute and re-invoke.                            |
 | Bootstrap didn't seem to run                                                | The marker blob (`.seeded` in `demo-data`) is present. Delete it and restart the agent to re-seed, or set `AGENT_SEED_ON_STARTUP=false` and seed manually. |

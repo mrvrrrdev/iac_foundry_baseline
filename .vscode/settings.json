@@ -33,6 +33,7 @@
             "matchCommandLine": true
         },
         ".\\agent-demo\\hooks\\postdeploy-demo-agent.ps1": true,
-        "git check-ignore": true
+        "git check-ignore": true,
+        "ConvertFrom-Json": true
     }
 }
