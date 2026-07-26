@@ -32,8 +32,9 @@ module "application_insights" {
       principal_id               = var.admin_group_id
       principal_type             = "Group"
     }
-    # The Foundry MI writes traces from agent runs into App Insights. Data-plane
-    # ingest role for a workspace-backed component.
+    # Stable defense-in-depth grant. Hosted agent versions receive a separate
+    # instance identity after deployment; the azd postdeploy hook grants that
+    # dynamic principal the same data-plane ingest role.
     foundry_mi_monitoring_metrics_publisher = {
       role_definition_id_or_name = "Monitoring Metrics Publisher"
       principal_id               = module.foundry_managed_identity.principal_id

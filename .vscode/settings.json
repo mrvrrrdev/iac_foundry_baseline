@@ -1,5 +1,38 @@
 {
     "chat.tools.terminal.autoApprove": {
-        "terraform": true
+        "terraform": true,
+        "Get-Item": true,
+        "Set-Content": true,
+        "Resolve-Path": true,
+        "Test-Path": true,
+        "/^pwsh -NoProfile -File \\.\\\\_repair_readme\\.ps1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "&": true,
+        "Resolve-DnsName": true,
+        "/^Write-Host '--- Route to PE IP 10\\.30\\.0\\.12 ---' -ForegroundColor Cyan; Find-NetRoute -RemoteIPAddress 10\\.30\\.0\\.12 \\| Select-Object -First 1 InterfaceAlias,IPAddress,NextHop,DestinationPrefix,RouteMetric \\| Format-Table -AutoSize; Write-Host '--- TCP test on 443 to PE IP ---' -ForegroundColor Cyan; Test-NetConnection -ComputerName 10\\.30\\.0\\.12 -Port 443 -InformationLevel Quiet; Write-Host '--- Ipconfig /flushdns ---' -ForegroundColor Cyan; ipconfig /flushdns \\| Out-Null; Write-Host 'flushed'$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "Get-Command": true,
+        "az": true,
+        "/^powershell -NoProfile -File \\.\\\\_insert_83\\.ps1$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "Join-String": true,
+        ".\\_insert_83.ps1": true,
+        "Push-Location": true,
+        "azd": true,
+        "Pop-Location": true,
+        "Out-Null": true,
+        "Write-Error": true,
+        "/^python -m py_compile \\.\\\\agent-demo\\\\src\\\\main\\.py \\.\\\\agent-demo\\\\src\\\\telemetry\\.py \\.\\\\agent-demo\\\\src\\\\config\\.py$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        ".\\agent-demo\\hooks\\postdeploy-demo-agent.ps1": true,
+        "git check-ignore": true
     }
 }

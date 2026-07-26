@@ -12,6 +12,15 @@
 #   - Private endpoint on the "registry" subresource
 #   - Max diagnostics to Log Analytics
 #
+# Server-side builds (`az acr build`) run on the ACR Tasks shared fleet whose
+# egress IPs are NOT covered by the "AzureServices" trusted-services bypass.
+# Rather than permanently weakening the ACR posture in Terraform, the
+# agent-demo `azd up` wrapper temporarily flips BOTH `--public-network-enabled`
+# AND `--default-action Allow` on for the ~2-minute build window and reverts
+# both in a finally block (see agent-demo/README.md step 6). Any subsequent
+# `terraform apply` re-asserts the private posture, so drift closes
+# automatically.
+#
 # The Foundry MI gets AcrPull (agents pull); the admin group gets both
 # AcrPush and AcrPull (build/push from CI + inspect from portal).
 #------------------------------------------------------
@@ -32,6 +41,17 @@ module "container_registry" {
   data_endpoint_enabled         = true
   public_network_access_enabled = var.ai_foundry_public_network_access_enabled
 
+  # Steady-state posture: assert `default_action = "Deny"` EXPLICITLY when
+  # public access is disabled (the default) so an audit of the resource
+  # graph shows Deny, not the Azure-default "Allow" that would be reported
+  # if we left the rule set unmanaged. When the account posture is
+  # break-glass (public access enabled), pass null so the module does not
+  # manage the rule set — the account-wide Allow posture takes effect.
+  #
+  # The agent-demo build wrapper flips BOTH `--public-network-enabled true`
+  # AND `--default-action Allow` for the build window, then reverts both.
+  # Public exposure during that window is bounded by Entra token auth
+  # (admin_enabled = false, anonymous_pull_enabled = false).
   network_rule_set = var.ai_foundry_public_network_access_enabled ? null : {
     default_action = "Deny"
     ip_rule        = []
@@ -40,7 +60,7 @@ module "container_registry" {
 
   retention_policy_in_days = 30
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     registry = {
       name                          = "${local.resource_names.container_registry_name}-pep"
       network_interface_name        = "${local.resource_names.container_registry_name}-pep-nic"
@@ -48,7 +68,7 @@ module "container_registry" {
       private_dns_zone_resource_ids = local.private_dns_zones.container_registry != null ? [local.private_dns_zones.container_registry] : []
       tags                          = var.tags
     }
-  }
+  } : {}
 
   role_assignments = {
     admin_group_acr_push = {

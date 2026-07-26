@@ -36,8 +36,21 @@ locals {
   }
 
   #------------------------------------------------------
-  # Subnet IDs (supplied via input variables). The agent subnet is only
-  # consumed when the Agent Service is enabled.
+  # Networking posture (derived from var.enable_private_networking).
+  #
+  # private_networking_enabled = true  => landing-zone posture:
+  #   private endpoints on every service, BYO subnets, optional BYO DNS.
+  #
+  # private_networking_enabled = false => self-contained posture:
+  #   NO private endpoints, NO subnets, NO DNS zone groups. Every resource is
+  #   reached over its public endpoint and the Foundry Agent Service runs on
+  #   Microsoft's platform-managed network.
+  #------------------------------------------------------
+  private_networking_enabled = var.enable_private_networking
+
+  #------------------------------------------------------
+  # Subnet IDs (supplied via input variables). Only consumed when private
+  # networking is enabled; ignored in the self-contained posture.
   #------------------------------------------------------
   subnet_ids = {
     private_endpoints = var.private_endpoints_subnet_resource_id
@@ -49,24 +62,31 @@ locals {
   # Sourced from the input variable; a null value means "no DNS zone group" - the
   # private endpoint is still created but its DNS records are managed out-of-band
   # (e.g. by an Azure Policy in a central connectivity subscription).
+  # Only consulted when private_networking_enabled = true.
   #------------------------------------------------------
   private_dns_zones = var.private_dns_zone_resource_ids
 
   # Private DNS zone configs for the AI Foundry account private endpoint, limited
   # to the zones whose resource IDs were supplied. Empty => the self-managed zone
-  # group is skipped entirely (DNS handled out-of-band).
-  ai_foundry_account_dns_configs = {
+  # group is skipped entirely (DNS handled out-of-band, or public-only posture).
+  ai_foundry_account_dns_configs = local.private_networking_enabled ? {
     for k in ["cognitiveservices", "openai", "ai"] :
     k => local.private_dns_zones[k] if local.private_dns_zones[k] != null
-  }
+  } : {}
 
   #------------------------------------------------------
-  # Agent Service is enabled implicitly when an agent subnet is supplied.
-  # Its bring-your-own (standard) setup additionally requires Storage + Cosmos DB
-  # + AI Search. When all three are present the capability host is wired to the
-  # adjacent resources; otherwise a basic capability host is created.
+  # Agent Service enablement.
+  #
+  # * Landing-zone posture: enabled implicitly when an agent subnet is supplied
+  #   (network injection into that subnet).
+  # * Self-contained posture: always enabled - the platform runs the Agent
+  #   Service on its own Microsoft-managed network; no injection is configured.
+  #
+  # BYO (standard) additionally requires Storage + Cosmos DB + AI Search. When
+  # all three are present the capability host is wired to the adjacent
+  # resources; otherwise a basic capability host is created.
   #------------------------------------------------------
-  enable_agent_service = var.agent_subnet_resource_id != null
+  enable_agent_service = local.private_networking_enabled ? (var.agent_subnet_resource_id != null) : true
 
   create_agent_byo = local.enable_agent_service && var.enable_cosmosdb && var.enable_ai_search
 

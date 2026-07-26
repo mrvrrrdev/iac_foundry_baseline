@@ -1,0 +1,1 @@
+Generate evaluation cases for the Acme AI Foundry diagnostic hosted agent. Verify that a simple input is echoed accurately and that responses remain concise and deterministic.

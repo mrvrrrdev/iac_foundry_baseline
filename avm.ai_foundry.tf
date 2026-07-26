@@ -42,8 +42,11 @@ module "ai_foundry" {
   # Model deployments (serialized to avoid 409 conflicts).
   cognitive_deployments = local.cognitive_deployments
 
-  # Agent Service network injection into the delegated agent subnet.
-  network_injections = local.enable_agent_service ? {
+  # Agent Service network injection into the delegated agent subnet. Only used
+  # in the landing-zone posture (private_networking_enabled = true) with a
+  # supplied agent subnet. In the self-contained posture the Agent Service
+  # runs on Microsoft's platform-managed network - no injection is configured.
+  network_injections = local.enable_agent_service && local.private_networking_enabled ? {
     subnet_id                         = local.subnet_ids.agent
     scenario                          = "agent"
     microsoft_managed_network_enabled = false
@@ -57,14 +60,14 @@ module "ai_foundry" {
   # is created directly in azapi_resource.ai_foundry_account_pe_dns_zone_group.
   private_endpoints_manage_dns_zone_group = false
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     account = {
       name                   = "${local.resource_names.ai_foundry_name}-pep"
       network_interface_name = "${local.resource_names.ai_foundry_name}-pep-nic"
       subnet_resource_id     = local.subnet_ids.private_endpoints
       tags                   = var.tags
     }
-  }
+  } : {}
 
   # NOTE: "Azure AI Developer" is intentionally NOT assigned here. This module's
   # role-assignment helper only treats role names containing "Cognitive Services"

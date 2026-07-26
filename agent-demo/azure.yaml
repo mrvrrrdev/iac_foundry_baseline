@@ -1,0 +1,89 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: acme-foundry-agent-demo
+metadata:
+    template: acme-foundry-agent-demo@1.0.0
+services:
+    demo-agent:
+        project: ./src
+        host: azure.ai.agent
+        language: python
+        docker:
+            remoteBuild: true
+        container:
+            resources:
+                cpu: "1"
+                memory: 2Gi
+        description: |
+            Acme AI Foundry environment demo agent. Exercises every optional service in the Foundry landing zone (Cosmos DB memory, AI Search knowledge base, Key Vault secrets, Blob object store, SMB file share, App Insights tracing, ACR hosted image) plus a health-check tool that pings every dependency and reports a PASS/FAIL matrix. Each capability is behind an AGENT_FEATURE_* env-var toggle that the container reads at startup.
+        environmentVariables:
+            - name: AZURE_AI_ACCOUNT_ENDPOINT
+              value: ${AZURE_AI_ACCOUNT_ENDPOINT}
+            - name: AZURE_AI_PROJECT_ENDPOINT
+              value: ${AZURE_AI_PROJECT_ENDPOINT}
+            - name: AZURE_AI_CHAT_DEPLOYMENT
+              value: ${AZURE_AI_CHAT_DEPLOYMENT}
+            - name: AZURE_AI_EMBEDDING_DEPLOYMENT
+              value: ${AZURE_AI_EMBEDDING_DEPLOYMENT}
+            - name: AZURE_CONTAINER_REGISTRY_NAME
+              value: ${AZURE_CONTAINER_REGISTRY_NAME}
+            - name: AZURE_COSMOS_ENDPOINT
+              value: ${AZURE_COSMOS_ENDPOINT}
+            - name: AZURE_COSMOS_DATABASE
+              value: ${AZURE_COSMOS_DATABASE}
+            - name: AZURE_COSMOS_MEMORY_CONTAINER
+              value: ${AZURE_COSMOS_MEMORY_CONTAINER}
+            - name: AZURE_SEARCH_ENDPOINT
+              value: ${AZURE_SEARCH_ENDPOINT}
+            - name: AZURE_KEY_VAULT_URI
+              value: ${AZURE_KEY_VAULT_URI}
+            - name: AZURE_KV_DEMO_SECRET_NAME
+              value: ${AZURE_KV_DEMO_SECRET_NAME}
+            - name: AZURE_STORAGE_ACCOUNT_NAME
+              value: ${AZURE_STORAGE_ACCOUNT_NAME}
+            - name: AZURE_STORAGE_BLOB_ENDPOINT
+              value: ${AZURE_STORAGE_BLOB_ENDPOINT}
+            - name: AZURE_STORAGE_FILE_ENDPOINT
+              value: ${AZURE_STORAGE_FILE_ENDPOINT}
+            - name: AZURE_STORAGE_DEMO_CONTAINER
+              value: ${AZURE_STORAGE_DEMO_CONTAINER}
+            - name: AZURE_STORAGE_DEMO_SHARE
+              value: ${AZURE_STORAGE_DEMO_SHARE}
+            - name: ACME_FEATURE_TRACING
+              value: ${AGENT_FEATURE_TRACING}
+            - name: ACME_FEATURE_HEALTHCHECK
+              value: ${AGENT_FEATURE_HEALTHCHECK}
+            - name: ACME_FEATURE_MEMORY_COSMOS
+              value: ${AGENT_FEATURE_MEMORY_COSMOS}
+            - name: ACME_FEATURE_KB_SEARCH
+              value: ${AGENT_FEATURE_KB_SEARCH}
+            - name: ACME_FEATURE_BLOB
+              value: ${AGENT_FEATURE_BLOB}
+            - name: ACME_FEATURE_KV_SECRET
+              value: ${AGENT_FEATURE_KV_SECRET}
+            - name: ACME_FEATURE_SMB_FILES
+              value: ${AGENT_FEATURE_SMB_FILES}
+            - name: ACME_FEATURE_CHAT_GPT5
+              value: ${AGENT_FEATURE_CHAT_GPT5}
+            - name: ACME_SEED_ON_STARTUP
+              value: ${AGENT_SEED_ON_STARTUP}
+        kind: hosted
+        name: acme-demo-agent
+        protocols:
+            - protocol: responses
+              version: 1.0.0
+hooks:
+    postdeploy:
+        windows:
+            shell: pwsh
+            run: ./hooks/postdeploy-demo-agent.ps1
+        posix:
+            shell: pwsh
+            run: ./hooks/postdeploy-demo-agent.ps1
+    preprovision:
+        windows:
+            shell: pwsh
+            run: ./hooks/preprovision.ps1
+        posix:
+            shell: pwsh
+            run: ./hooks/preprovision.ps1

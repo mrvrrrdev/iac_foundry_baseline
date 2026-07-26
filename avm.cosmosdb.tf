@@ -28,7 +28,7 @@ module "cosmosdb" {
     consistency_level = "Session"
   }
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     sql = {
       name                          = "${local.resource_names.cosmosdb_name}-pep-sql"
       network_interface_name        = "${local.resource_names.cosmosdb_name}-pep-sql-nic"
@@ -37,7 +37,7 @@ module "cosmosdb" {
       subresource_name              = "Sql"
       tags                          = var.tags
     }
-  }
+  } : {}
 
   role_assignments = {
     admin_group_documentdb_contributor = {

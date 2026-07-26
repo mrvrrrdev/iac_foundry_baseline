@@ -1,0 +1,9 @@
+# Ignore azd runtime state and any Python virtualenv a developer might create
+# locally while exploring the source (the demo itself does not require Python
+# on the dev machine).
+.azure/
+.env
+__pycache__/
+*.py[cod]
+.venv/
+venv/

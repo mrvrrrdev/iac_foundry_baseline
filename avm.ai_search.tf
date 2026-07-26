@@ -23,7 +23,7 @@ module "ai_search" {
     system_assigned = true
   }
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     search = {
       name                          = "${local.resource_names.search_name}-pep"
       network_interface_name        = "${local.resource_names.search_name}-pep-nic"
@@ -31,7 +31,7 @@ module "ai_search" {
       subnet_resource_id            = local.subnet_ids.private_endpoints
       tags                          = var.tags
     }
-  }
+  } : {}
 
   role_assignments = {
     admin_group_search_service_contributor = {

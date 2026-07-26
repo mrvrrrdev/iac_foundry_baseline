@@ -30,7 +30,7 @@ module "storage_account" {
     }
   }
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     blob = {
       name                          = "${local.resource_names.storage_account_name}-pep-blob"
       network_interface_name        = "${local.resource_names.storage_account_name}-pep-blob-nic"
@@ -47,7 +47,7 @@ module "storage_account" {
       subresource_name              = "file"
       tags                          = var.tags
     }
-  }
+  } : {}
 
   role_assignments = {
     admin_group_blob_data_owner = {

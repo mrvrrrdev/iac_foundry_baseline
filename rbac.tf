@@ -145,3 +145,73 @@ resource "time_sleep" "wait_for_agent_rbac" {
     azurerm_cosmosdb_sql_role_assignment.foundry_mi_cosmos_data_contributor,
   ]
 }
+
+#------------------------------------------------------
+# Hosted-agent image pull - AcrPull for the platform identities.
+#
+# Foundry's hosted-agent runtime pulls the agent image using the AI Foundry
+# account's SYSTEM-assigned MI and the project's SYSTEM-assigned MI (in
+# addition to any per-agent blueprint identity it materializes at deploy
+# time). Without AcrPull on the ACR for both of these principals, the
+# platform-side image pull races or fails on the very first version and the
+# customer sees an opaque `[ProvisioningError] Agent version provisioning
+# failed. Please retry.` with empty `container_protocol_versions`.
+#
+# The user-assigned MI already has AcrPull via avm.container_registry.tf.
+# These two assignments cover the SYSTEM-assigned identities that the AVM
+# module cannot express because their principal IDs are only known after the
+# Foundry/project resources create.
+#------------------------------------------------------
+resource "azurerm_role_assignment" "foundry_account_sami_acr_pull" {
+  count = local.enable_agent_service ? 1 : 0
+
+  scope                = module.container_registry[0].resource_id
+  role_definition_name = "AcrPull"
+  principal_id         = module.ai_foundry.system_assigned_mi_principal_id
+  principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_role_assignment" "foundry_project_sami_acr_pull" {
+  count = local.enable_agent_service ? 1 : 0
+
+  scope                = module.container_registry[0].resource_id
+  role_definition_name = "AcrPull"
+  principal_id         = azapi_resource.project.output.identity.principalId
+  principal_type       = "ServicePrincipal"
+}
+
+#------------------------------------------------------
+# Hosted-agent telemetry - Monitoring Metrics Publisher on App Insights
+# for the platform SYSTEM-assigned identities.
+#
+# App Insights is provisioned with `local_authentication_disabled = true`
+# (avm.app_insights.tf), so every telemetry export must present an AAD
+# token whose principal holds a data-plane ingest role on the component.
+# The AVM module grants Monitoring Metrics Publisher to the stable Foundry
+# user-assigned MI, and the assignments below cover the stable account and
+# project SYSTEM-assigned identities. The hosted container uses a per-version
+# instance SAMI that does not exist until the agent version is deployed, so
+# hooks/postdeploy-demo-agent.ps1 discovers and grants that dynamic identity.
+# Without the current-version grant the container logs flood with
+# `ClientAuthenticationError: Unauthorized` from
+# `azure.monitor.opentelemetry.exporter.export._base` and
+# `._quickpulse._exporter` (server message: "The Agent/SDK does not have
+# permissions to send telemetry to this resource").
+#------------------------------------------------------
+resource "azurerm_role_assignment" "foundry_account_sami_appi_metrics_publisher" {
+  count = local.enable_agent_service ? 1 : 0
+
+  scope                = module.application_insights.resource_id
+  role_definition_name = "Monitoring Metrics Publisher"
+  principal_id         = module.ai_foundry.system_assigned_mi_principal_id
+  principal_type       = "ServicePrincipal"
+}
+
+resource "azurerm_role_assignment" "foundry_project_sami_appi_metrics_publisher" {
+  count = local.enable_agent_service ? 1 : 0
+
+  scope                = module.application_insights.resource_id
+  role_definition_name = "Monitoring Metrics Publisher"
+  principal_id         = azapi_resource.project.output.identity.principalId
+  principal_type       = "ServicePrincipal"
+}

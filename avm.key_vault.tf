@@ -17,7 +17,7 @@ module "key_vault" {
     bypass         = "AzureServices"
   }
 
-  private_endpoints = {
+  private_endpoints = local.private_networking_enabled ? {
     vault = {
       name                          = "${local.resource_names.key_vault_name}-pep-vault"
       network_interface_name        = "${local.resource_names.key_vault_name}-pep-vault-nic"
@@ -26,7 +26,7 @@ module "key_vault" {
       subresource_name              = ["vault"]
       tags                          = var.tags
     }
-  }
+  } : {}
 
   role_assignments = {
     admin_group_key_vault_administrator = {

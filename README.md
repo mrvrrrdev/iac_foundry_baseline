@@ -8,7 +8,11 @@ private virtual network.
 
 Everything is **private by default**: public network access is disabled, key-based
 (local) auth is disabled, and every resource is reachable only through **private
-endpoints**.
+endpoints**. Set `enable_private_networking = false` to opt into a **self-contained**
+posture instead — public endpoints on every service and the Foundry Agent Service
+running on Microsoft's platform-managed network, with **no landing-zone dependencies
+at all**. See [Section 4 — Landing zone expectations](#4-landing-zone-expectations)
+and [Section 6 — Deployment topologies](#6-deployment-topologies).
 
 This module does **not** create any networking. It **consumes an existing landing
 zone** — the virtual network, subnets, egress firewall and (optionally) private DNS
@@ -20,20 +24,16 @@ environments. See [Section 4 — Landing zone expectations](#4-landing-zone-expe
 
 ## 1. Overview
 
-| Aspect | Value |
-|--------|-------|
-| Account kind | `Microsoft.CognitiveServices/accounts` — `AIServices` (Foundry) |
-| Auth | Entra ID only (`local_auth_enabled = false`) |
-| Network | Private endpoints only (`public_network_access_enabled = false`) |
+| Network (default) | Private endpoints only, BYO subnets (`enable_private_networking = true`) |
+| Network (opt-out) | Public endpoints only, no LZ dependencies (`enable_private_networking = false`) |
 | Identity | User-assigned managed identity (Entra ID / RBAC to dependencies) |
 | Always deployed | Foundry account + project + models, Key Vault, Storage, Log Analytics, Monitor workspace, **Application Insights** |
-| Optional | AI Search, Cosmos DB, Agent Service (network-injected), **Container Registry** (auto-on with Agent Service) |
-| Network ownership | **Not** created here — supplied by the landing zone via variables |
+| Optional | AI Search, Cosmos DB, Agent Service (network-injected in private mode, MS-managed network in self-contained mode), **Container Registry** (auto-on with Agent Service) |
+| Network ownership | **Not** created here — either supplied by the LZ via variables (private mode) or bypassed entirely (self-contained mode) |
 
 ---
 
 ## 2. Architecture
-
 ```mermaid
 flowchart TB
   subgraph lz["Landing zone VNet (supplied via variables)"]
@@ -83,8 +83,8 @@ Search / Cosmos DB — plus their private endpoints and role assignments. The VN
 subnets, firewall and DNS zones are **inputs**, not outputs.
 
 **Naming convention** (CAF): `<workload>-<env>-<abbr>[-<role>]-<seq>`, e.g. with
-`workload = sko`, `env = dev`, `seq = 01`: `sko-dev-aif-01`, `sko-dev-kv-fdy-01`,
-`sko-dev-log-foundry-01`, `skodevstfnd01` (storage, compact form).
+`workload = acme`, `env = dev`, `seq = 01`: `acme-dev-aif-01`, `acme-dev-kv-fdy-01`,
+`acme-dev-log-foundry-01`, `acmedevstfnd01` (storage, compact form).
 
 ---
 
@@ -123,6 +123,11 @@ az provider register --namespace Microsoft.MachineLearningServices --wait
 The module treats the landing zone as an external contract. Before applying, the
 landing zone must provide the following and expose them to the module through input
 variables.
+
+> **Skipping the landing zone entirely:** set `enable_private_networking = false` to
+> deploy on public endpoints with no BYO subnets, no BYO DNS, and no egress firewall
+> rules. The whole section below then does not apply — see
+> [Section 6 — Deployment topologies](#6-deployment-topologies) for that mode.
 
 | Requirement | Provided to module via | Notes |
 |-------------|------------------------|-------|
@@ -175,9 +180,7 @@ backs Agent Service network injection. Its constraints come from that platform:
 > Reference sizing from an auto-provisioned setup: VNet `192.168.0.0/16`, agent subnet
 > `192.168.0.0/24`, private-endpoints subnet `192.168.1.0/24`.
 
-### 5.2 Private DNS zones
-
-The Foundry account always needs:
+### 5.2 Private DNS zonesThe Foundry account always needs:
 
 ```raw
 privatelink.cognitiveservices.azure.com
@@ -313,7 +316,7 @@ These variables are the entire contract between your landing zone and the module
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
 | `location` | string | `uksouth` | Region (short form). Must equal the VNet region. |
-| `resource_name_workload` | string | `sko` | Workload segment (<= 4 chars). |
+| `resource_name_workload` | string | `acme` | Workload segment (<= 4 chars). |
 | `resource_name_environment` | string | `dev` | Environment segment (<= 4 chars). |
 | `resource_name_sequence_start` | number | `1` | Sequence number (1–99). |
 | `tags` | map(string) | — | Tags applied to all resources. |
@@ -333,9 +336,10 @@ These variables are the entire contract between your landing zone and the module
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `private_endpoints_subnet_resource_id` | string | — | **Required.** Full subnet ID for private endpoints. |
-| `agent_subnet_resource_id` | string | `null` | Delegated agent subnet ID. Set -> enables Agent Service. `/27` min, `/24` recommended. |
-| `private_dns_zone_resource_ids` | object | `{}` | Per-zone DNS zone IDs (`cognitiveservices`, `openai`, `ai`, `blob`, `file`, `vault`, `search`, `cosmos_sql`, `container_registry`). Omit a key to manage DNS out-of-band. |
+| `enable_private_networking` | bool | `true` | Master switch for the private / landing-zone posture. `true` = private endpoints on every service, BYO subnets required. `false` = self-contained posture: no PEs, no BYO subnets, no BYO DNS, everything on public endpoints, Agent Service on Microsoft-managed network. |
+| `private_endpoints_subnet_resource_id` | string | `null` | Full subnet ID for private endpoints. **Required** when `enable_private_networking = true`; ignored otherwise. |
+| `agent_subnet_resource_id` | string | `null` | Delegated agent subnet ID (private mode only). Set -> enables Agent Service via VNet injection. `/27` min, `/24` recommended. Ignored in self-contained mode (Agent Service always runs on MS-managed network there). |
+| `private_dns_zone_resource_ids` | object | `{}` | Per-zone DNS zone IDs (`cognitiveservices`, `openai`, `ai`, `blob`, `file`, `vault`, `search`, `cosmos_sql`, `container_registry`). Omit a key to manage DNS out-of-band. Ignored in self-contained mode. |
 
 ### Project and models
 
@@ -361,14 +365,14 @@ These variables are the entire contract between your landing zone and the module
 ### 8.1 Minimal (no Agent Service, out-of-band DNS)
 
 ```hcl
-resource_name_workload    = "sko"
+resource_name_workload    = "acme"
 resource_name_environment = "dev"
 location                  = "swedencentral"
 
 private_endpoints_subnet_resource_id = "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<vnet>/subnets/<pe-subnet>"
 # agent_subnet_resource_id omitted -> Agent Service disabled
 
-admin_group_name = "mhub-dev-super-admins"
+admin_group_name = "acme--dev-super-admins"
 admin_group_id   = "00000000-0000-0000-0000-000000000000"
 
 ai_foundry_model_deployments = {
@@ -384,7 +388,7 @@ tags = { SecurityControl = "Ignore" }
 ### 8.2 Full — Agent Service (BYO / standard) with Terraform-managed DNS
 
 ```hcl
-resource_name_workload    = "sko"
+resource_name_workload    = "acme"
 resource_name_environment = "dev"
 location                  = "swedencentral"
 
@@ -393,7 +397,7 @@ location                  = "swedencentral"
 private_endpoints_subnet_resource_id = "/subscriptions/<sub>/.../subnets/<pe-subnet>"
 agent_subnet_resource_id             = "/subscriptions/<sub>/.../subnets/<agent-subnet>"
 
-admin_group_name = "mhub-dev-super-admins"
+admin_group_name = "acme--dev-super-admins"
 admin_group_id   = "00000000-0000-0000-0000-000000000000"
 
 private_dns_zone_resource_ids = {
@@ -407,8 +411,8 @@ private_dns_zone_resource_ids = {
   cosmos_sql        = "/subscriptions/<sub>/.../privateDnsZones/privatelink.documents.azure.com"
 }
 
-ai_foundry_project_name         = "proj-sko-dev"
-ai_foundry_project_display_name = "SKO Dev AI Foundry"
+ai_foundry_project_name         = "proj-acme-dev"
+ai_foundry_project_display_name = "Acme Dev AI Foundry"
 
 ai_foundry_model_deployments = {
   "gpt-5"                  = { model_name = "gpt-5",                  model_version = "2025-08-07", sku_name = "GlobalStandard", sku_capacity = 20 }
@@ -421,6 +425,50 @@ enable_cosmosdb  = true
 
 tags = { SecurityControl = "Ignore" }
 ```
+
+### 8.3 Self-contained — public endpoints, Microsoft-managed Agent network (no landing zone)
+
+Set `enable_private_networking = false` to skip the landing-zone dependency entirely:
+no VNet / subnets / private DNS zones required, all Foundry-adjacent services expose
+public endpoints, and the Agent Service runs on a Microsoft-managed network. Ideal for
+sandbox / demo subscriptions where no hub VNet exists yet. See also
+[`terraform.public.tfvars`](./terraform.public.tfvars).
+
+```hcl
+resource_name_workload    = "acme"
+resource_name_environment = "dev"
+location                  = "swedencentral"
+
+# Opt out of the landing-zone posture.
+enable_private_networking = false
+
+# No subnet / DNS variables needed in this mode:
+# private_endpoints_subnet_resource_id, agent_subnet_resource_id,
+# and private_dns_zone_resource_ids are all ignored.
+
+admin_group_name = "acme--dev-super-admins"
+admin_group_id   = "00000000-0000-0000-0000-000000000000"
+
+ai_foundry_project_name         = "proj-acme-dev"
+ai_foundry_project_display_name = "Acme Dev AI Foundry"
+
+ai_foundry_model_deployments = {
+  "gpt-5"                  = { model_name = "gpt-5",                  model_version = "2025-08-07", sku_name = "GlobalStandard", sku_capacity = 20 }
+  "text-embedding-3-large" = { model_name = "text-embedding-3-large", model_version = "1",          sku_name = "Standard",       sku_capacity = 10 }
+}
+
+# Agent Service is always on in this mode (Microsoft-managed network); BYO
+# search + cosmos are still supported and recommended for a full smoke test.
+enable_ai_search = true
+enable_cosmosdb  = true
+
+tags = { SecurityControl = "Ignore" }
+```
+
+> In this mode the module additionally provisions the **account-level capability host**
+> (`Microsoft.CognitiveServices/accounts/capabilityHosts`) explicitly — the Foundry
+> platform only auto-creates it when a VNet injection is present. The project-level
+> capability host depends on it. See `foundry.project.tf`.
 
 ---
 
@@ -520,3 +568,28 @@ re-apply.
 A steady-state plan of `0 add / 0 destroy` with ~14 in-place updates (diagnostic
 settings `metric` -> `enabled_metric`, azapi connection/account/deployment body
 re-normalization, `modtm_telemetry`) are no-op re-sends. Do not chase them.
+
+---
+
+## 12. Optional: hosted agent demo
+
+The default `terraform.tfvars` sets `enable_demo_scaffolding = true`, which
+provisions a small **demo footprint** on top of the landing zone (a blob
+container, SMB file share, Cosmos DB + memory container, a Key Vault secret,
+and the two role assignments the demo caller needs). This footprint is the
+seed data for a containerised **Foundry hosted agent** — `acme-demo-agent` —
+that exercises every service in the landing zone (Foundry, Cosmos, AI Search,
+Key Vault, Blob + SMB storage, ACR, App Insights) as an end-to-end smoke test
+and capability demo.
+
+The agent lives under [`agent-demo/`](./agent-demo/) and is deployed with
+`azd` from a PowerShell 7 workstation — no local Python, no local Docker, no
+WSL required. The image is built server-side via an ACR remote build. See
+[`agent-demo/README.md`](./agent-demo/README.md) for the full workflow,
+including a **Redeploying from scratch** recipe that combines `azd down`
+with the Cognitive Services purge in §11.1 above.
+
+Set `enable_demo_scaffolding = false` in `terraform.tfvars` to omit the demo
+resources entirely; the hosted agent workflow is then unavailable, but the
+landing zone is otherwise unchanged.
+

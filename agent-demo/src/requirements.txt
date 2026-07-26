@@ -1,0 +1,31 @@
+# Pinned to conservative, current stable versions as of 2026-07. Keep this
+# list minimal - each addition adds container image size and cold-start latency.
+
+# ---- Core data-model / config layer ----------------------------------------
+# NOTE: FastAPI / uvicorn are intentionally NOT in this file. The Foundry
+# hosted-agent Responses runtime (azure-ai-agentserver-responses) bundles its
+# own Starlette-based ASGI host and requires starlette>=0.45 - which conflicts
+# with fastapi<0.116. Keeping only pydantic here.
+pydantic==2.9.2
+pydantic-settings==2.6.1
+
+# ---- Foundry hosted-agent Responses protocol server -----------------------
+# Provides the /readiness + /responses{,/cancel,/input_items,...} contract
+# that the Foundry Agent Service runtime probes on container start-up.
+# Docs: https://pypi.org/project/azure-ai-agentserver-responses/
+azure-ai-agentserver-responses==1.0.0b9
+
+# ---- Azure identity + SDK clients used by the demo tools -------------------
+azure-identity==1.19.0
+azure-cosmos==4.7.0
+azure-storage-blob==12.24.0
+azure-storage-file-share==12.20.0
+azure-keyvault-secrets==4.9.0
+azure-search-documents==11.5.2
+
+# ---- OpenAI SDK (used by the KB tool to call the Foundry embedding
+#      deployment via the account's OpenAI-compatible endpoint) -------------
+openai==1.55.3
+
+# ---- Telemetry -------------------------------------------------------------
+azure-monitor-opentelemetry==1.8.9

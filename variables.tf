@@ -15,7 +15,7 @@ variable "location" {
 variable "resource_name_workload" {
   type        = string
   description = "The name segment for the workload. Must match 01.HubSpoke project_prefix."
-  default     = "sko"
+  default     = "acme"
   validation {
     condition     = can(regex("^[a-z0-9]+$", var.resource_name_workload))
     error_message = "The name segment for the workload must only contain lowercase letters and numbers"
@@ -105,20 +105,51 @@ variable "ai_foundry_local_auth_enabled" {
 }
 
 #------------------------------------------------------
-# Networking (bring-your-own subnets)
+# Networking mode
+#------------------------------------------------------
+variable "enable_private_networking" {
+  type        = bool
+  description = <<-EOT
+    Master switch for the private, landing-zone-integrated network posture.
+
+      * true  (default) - regulated posture: private endpoints on every service,
+                          BYO subnets (private_endpoints_subnet_resource_id is
+                          REQUIRED), optional BYO agent subnet for Agent Service
+                          network injection, optional BYO private DNS zones. No
+                          resources are exposed on the public internet unless
+                          ai_foundry_public_network_access_enabled is also
+                          flipped for a break-glass window.
+
+      * false - self-contained posture: NO private endpoints, NO BYO subnets, NO
+                BYO DNS. Every resource is reached over its public endpoint
+                (ai_foundry_public_network_access_enabled must be true) and the
+                Foundry Agent Service runs on Microsoft's platform-managed
+                network. Use this for demos / greenfield subscriptions with no
+                enterprise landing zone.
+  EOT
+  default     = true
+}
+
+#------------------------------------------------------
+# Networking (bring-your-own subnets - only used when enable_private_networking = true)
 #------------------------------------------------------
 variable "private_endpoints_subnet_resource_id" {
   type        = string
-  description = "Resource ID of the subnet that hosts the private endpoints for the AI Foundry account and all adjacent resources (storage, key vault, AI Search, Cosmos DB). Required."
+  description = "Resource ID of the subnet that hosts the private endpoints for the AI Foundry account and all adjacent resources (storage, key vault, AI Search, Cosmos DB). Required when enable_private_networking = true; ignored otherwise."
+  default     = null
   validation {
-    condition     = can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft.Network/virtualNetworks/[^/]+/subnets/[^/]+$", var.private_endpoints_subnet_resource_id))
+    condition     = var.private_endpoints_subnet_resource_id == null || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft.Network/virtualNetworks/[^/]+/subnets/[^/]+$", var.private_endpoints_subnet_resource_id))
     error_message = "private_endpoints_subnet_resource_id must be a full subnet resource ID (/subscriptions/.../virtualNetworks/.../subnets/...)."
+  }
+  validation {
+    condition     = !var.enable_private_networking || var.private_endpoints_subnet_resource_id != null
+    error_message = "private_endpoints_subnet_resource_id is required when enable_private_networking = true. Set enable_private_networking = false to deploy without a landing zone (public endpoints, Microsoft-managed network for agents)."
   }
 }
 
 variable "agent_subnet_resource_id" {
   type        = string
-  description = "Resource ID of the delegated subnet used for Agent Service network injection. Providing it ENABLES the Foundry Agent Service (capability host + network injection); leave null to disable the Agent Service entirely."
+  description = "Resource ID of the delegated subnet used for Agent Service network injection. Only meaningful when enable_private_networking = true; supplying it then ENABLES the Foundry Agent Service via network injection. Ignored when enable_private_networking = false (in that mode the Agent Service always runs on Microsoft's platform-managed network)."
   default     = null
   validation {
     condition     = var.agent_subnet_resource_id == null || can(regex("^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft.Network/virtualNetworks/[^/]+/subnets/[^/]+$", var.agent_subnet_resource_id))
@@ -219,5 +250,28 @@ variable "ai_search_sku" {
 variable "enable_cosmosdb" {
   type        = bool
   description = "Provision an adjacent Azure Cosmos DB (NoSQL) account for Agent Service thread storage (private endpoint, Entra-only auth)."
+  default     = false
+}
+
+#------------------------------------------------------
+# Demo scaffolding (agent-demo/)
+#------------------------------------------------------
+variable "enable_demo_scaffolding" {
+  type        = bool
+  description = <<-EOT
+    Provision the small set of demo resources consumed by the agent-demo/ sample
+    hosted agent: a blob container (demo-data), an SMB file share (demo-share), a
+    Key Vault secret (demo-flag), and a Cosmos DB SQL database (demo) + container
+    (memory). Also adds the two role assignments the demo requires on top of the
+    baseline admin-group roles: Storage Account Contributor (so the admin caller
+    can create the file share via ARM) and Cosmos DB SQL Built-in Data Contributor
+    (so a developer identity in the admin group can read/write the memory
+    container from outside the hosted agent for local debugging).
+
+    Only meaningful when the underlying optional services are enabled
+    (var.enable_cosmosdb for the Cosmos parts, otherwise those resources are
+    silently skipped inside demo_scaffolding.tf). The AI Search demo index is NOT
+    created here - it is seeded idempotently by the running agent container.
+  EOT
   default     = false
 }

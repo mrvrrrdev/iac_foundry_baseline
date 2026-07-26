@@ -141,15 +141,50 @@ resource "azapi_resource" "conn_appinsights" {
 #------------------------------------------------------
 # Agent Service capability host.
 #
-# For network-injected Foundry accounts (network_injections scenario =
-# "agent") the platform AUTOMATICALLY provisions the account-level agent
-# capability host ("<account>@aml_aiagentservice") at account creation, using
-# the injected agent subnet as its customerSubnet. Creating a second
-# account-level capability host here conflicts with that platform-managed one
-# ("customerSubnet must match the subnet recorded on the Foundry account"), so
-# only the project-level capability host is created below; it relies on the
-# platform-provisioned account capability host.
+# Two flavours depending on the network posture:
+#
+# * Landing-zone posture (private_networking_enabled = true, network injection
+#   configured): the platform AUTOMATICALLY provisions the account-level agent
+#   capability host ("<account>@aml_aiagentservice") at account creation,
+#   using the injected agent subnet as its customerSubnet. Creating a second
+#   account-level capability host in that case conflicts with the platform-
+#   managed one ("customerSubnet must match the subnet recorded on the Foundry
+#   account"), so we only create the project-level capability host and let it
+#   inherit from the platform-provisioned account one.
+#
+# * Self-contained posture (private_networking_enabled = false, no network
+#   injection): the platform does NOT auto-provision an account-level
+#   capability host. Trying to create the project-level one first fails with:
+#     "Foundry Account capabilityHost Not Found, please retry again after
+#      creating capabilityHost for the Foundry Account."
+#   In that case we create a basic (no customerSubnet) account-level capability
+#   host here and make the project-level one depend on it.
 #------------------------------------------------------
+resource "azapi_resource" "account_capability_host" {
+  count = local.enable_agent_service && !local.private_networking_enabled ? 1 : 0
+
+  type      = "Microsoft.CognitiveServices/accounts/capabilityHosts@2025-04-01-preview"
+  name      = "caphost"
+  parent_id = module.ai_foundry.resource_id
+
+  # The azapi provider's embedded schema for
+  # accounts/capabilityHosts@2025-04-01-preview is stale (same story as the
+  # project-level resource below) and rejects `capabilityHostKind`, which the
+  # real Azure API accepts. Disable client-side schema validation.
+  schema_validation_enabled = false
+
+  body = {
+    properties = {
+      capabilityHostKind = "Agents"
+    }
+  }
+
+  # The account resource (including model deployments and role assignments in
+  # the AVM module) must be fully created before the account-level capability
+  # host is provisioned.
+  depends_on = [module.ai_foundry]
+}
+
 resource "azapi_resource" "project_capability_host" {
   count = local.enable_agent_service ? 1 : 0
 
@@ -175,6 +210,7 @@ resource "azapi_resource" "project_capability_host" {
   }
 
   depends_on = [
+    azapi_resource.account_capability_host,
     azapi_resource.conn_storage,
     azapi_resource.conn_cosmos,
     azapi_resource.conn_search,
